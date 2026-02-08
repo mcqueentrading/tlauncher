@@ -1,6 +1,35 @@
 #!/bin/bash
-apps=$(grep -hE "^(Name|Exec)=" /usr/share/applications/*.desktop ~/.local/share/applications/*.desktop 2>/dev/null|awk -F= '/^Name=/{n=$2}/^Exec=/{e=$2;sub(/%.*/,"",e);print n"\t"e}'|sort -u)
-selected=$(fzf --delimiter=$'\t' --with-nth=1 --layout=reverse --border --prompt="Launch > "<<<"$apps")||exec bash
-setsid bash -c "$(echo "$selected"|cut -f2)" &>/dev/null &
+# ---- build app list from .desktop files ----
+apps=$(
+  grep -hE "^(Name|Exec)=" /usr/share/applications/*.desktop ~/.local/share/applications/*.desktop 2>/dev/null |
+  awk -F= '
+    /^Name=/ { name=$2 }
+    /^Exec=/ {
+      sub(/%.*/, "", $2)  # remove %U, %f, etc
+      print name "\t"$2
+    }
+  ' | sort -u
+)
+# ---- select program ----
+selected=$(
+  echo "$apps" |
+  fzf \
+    --delimiter=$'\t' \
+    --with-nth=1 \
+    --layout=reverse \
+    --border \
+    --prompt="Launch > "
+)
+
+# ---- if cancelled (Ctrl+C or ESC), just exit without killing terminal ----
+[ -z "$selected" ] && exit 1
+
+# ---- extract executable and arguments ----
+cmd=$(echo "$selected" | cut -f2)
+
+# ---- launch GUI program detached from terminal ----
+setsid bash -c "$cmd" >/dev/null 2>&1 &
+
+# ---- kill the terminal window (only if app was selected) ----
 sleep 0.1
 kill $PPID
